@@ -1,0 +1,29 @@
+# Exclude training & raw datasets
+data/raw/*
+!data/raw/.gitkeep
+data/processed/*
+!data/processed/.gitkeep
+
+# Exclude notebooks, reports & figures
+notebooks/
+reports/
+
+# Exclude test suite & test caches
+tests/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Exclude unneeded large binary models
+models/random_forest_pipeline.joblib
+
+# Exclude local dev scripts & dev requirements
+eval_test_metrics.py
+run_milestone3.py
+requirements-dev.txt
+
+# Exclude IDE & OS files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
