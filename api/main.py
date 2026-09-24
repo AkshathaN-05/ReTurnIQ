@@ -36,8 +36,46 @@ logging.basicConfig(
 )
 logger = logging.getLogger("returniq_api")
 
-MODEL_PATH = "models/best_model_pipeline.joblib"
-METADATA_PATH = "models/model_metadata.json"
+import sys
+
+# Ensure project root is in sys.path for serverless execution environments (e.g. Vercel)
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if BASE_DIR not in sys.path:
+    sys.path.insert(0, BASE_DIR)
+
+MODEL_PATH = os.path.join(BASE_DIR, "models", "best_model_pipeline.joblib")
+METADATA_PATH = os.path.join(BASE_DIR, "models", "model_metadata.json")
+
+
+def ensure_artifacts_loaded(app_inst: FastAPI) -> None:
+    """Ensure pipeline and metadata artifacts are loaded (supports serverless cold starts)."""
+    if getattr(app_inst.state, "pipeline", None) is not None:
+        return
+
+    if not os.path.exists(MODEL_PATH):
+        raise RuntimeError(f"Trained pipeline artifact not found at '{MODEL_PATH}'")
+
+    if not os.path.exists(METADATA_PATH):
+        raise RuntimeError(f"Model metadata artifact not found at '{METADATA_PATH}'")
+
+    logger.info("Loading pipeline artifact from %s...", MODEL_PATH)
+    app_inst.state.pipeline = joblib.load(MODEL_PATH)
+
+    logger.info("Loading metadata from %s...", METADATA_PATH)
+    with open(METADATA_PATH, "r") as f:
+        app_inst.state.metadata = json.load(f)
+
+    threshold = app_inst.state.metadata.get("recommended_threshold", 0.63)
+    app_inst.state.threshold = float(threshold)
+    app_inst.state.model_name = app_inst.state.metadata.get("best_model", "LogisticRegression")
+    app_inst.state.feature_names = app_inst.state.metadata.get("feature_names", [])
+
+    logger.info(
+        "Successfully loaded %s pipeline. Deployment threshold: %.2f (%d features).",
+        app_inst.state.model_name,
+        app_inst.state.threshold,
+        len(app_inst.state.feature_names),
+    )
 
 
 # =====================================================================
@@ -48,36 +86,8 @@ METADATA_PATH = "models/model_metadata.json"
 async def lifespan(app: FastAPI):
     """Load trained ML pipeline and metadata once at application startup."""
     logger.info("Initializing ReTurnIQ API service...")
-
-    if not os.path.exists(MODEL_PATH):
-        raise RuntimeError(f"Trained pipeline artifact not found at '{MODEL_PATH}'")
-
-    if not os.path.exists(METADATA_PATH):
-        raise RuntimeError(f"Model metadata artifact not found at '{METADATA_PATH}'")
-
-    # Load artifacts into app.state
-    logger.info("Loading pipeline artifact from %s...", MODEL_PATH)
-    app.state.pipeline = joblib.load(MODEL_PATH)
-
-    logger.info("Loading metadata from %s...", METADATA_PATH)
-    with open(METADATA_PATH, "r") as f:
-        app.state.metadata = json.load(f)
-
-    # Extract threshold and model details
-    threshold = app.state.metadata.get("recommended_threshold", 0.63)
-    app.state.threshold = float(threshold)
-    app.state.model_name = app.state.metadata.get("best_model", "LogisticRegression")
-    app.state.feature_names = app.state.metadata.get("feature_names", [])
-
-    logger.info(
-        "Successfully loaded %s pipeline. Deployment threshold: %.2f (%d features).",
-        app.state.model_name,
-        app.state.threshold,
-        len(app.state.feature_names),
-    )
-
+    ensure_artifacts_loaded(app)
     yield
-
     logger.info("Shutting down ReTurnIQ API service...")
 
 
@@ -277,6 +287,7 @@ async def root():
 @app.get("/health", response_model=HealthResponse, tags=["Monitoring"])
 async def health_check():
     """Health check endpoint confirming model status and deployment threshold."""
+    ensure_artifacts_loaded(app)
     pipeline = getattr(app.state, "pipeline", None)
     if pipeline is None:
         raise HTTPException(
@@ -303,6 +314,7 @@ async def predict_return_risk(order: OrderInput):
     Accepts raw pre-delivery order fields, executes automatic feature engineering,
     imputation, and scaling, and applies the deployment threshold stored in model metadata.
     """
+    ensure_artifacts_loaded(app)
     pipeline = getattr(app.state, "pipeline", None)
     if pipeline is None:
         raise HTTPException(
