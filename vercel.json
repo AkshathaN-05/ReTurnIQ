@@ -7,10 +7,5 @@
       "includeFiles": "models/best_model_pipeline.joblib,models/logistic_regression_pipeline.joblib,models/model_metadata.json,src/**"
     }
   },
-  "rewrites": [
-    {
-      "source": "/(.*)",
-      "destination": "/api/index.py"
-    }
-  ]
+
 }

@@ -95,32 +95,7 @@ async def lifespan(app: FastAPI):
 # FastAPI Application Initialization
 # =====================================================================
 
-class VercelPathRewriteMiddleware:
-    """
-    ASGI middleware ensuring compatibility with Vercel serverless function path rewrites.
-    Strips internal Vercel script/route prefixes (/api/index.py, /api/main.py, /api)
-    so FastAPI routes (/health, /predict, /docs, /) match cleanly in production and locally.
-    """
 
-    def __init__(self, app):
-        self.app = app
-
-    async def __call__(self, scope, receive, send):
-        if scope["type"] == "http":
-            path = scope.get("path", "")
-            for prefix in ("/api/index.py", "/api/main.py"):
-                if path.startswith(prefix):
-                    path = path[len(prefix):]
-                    break
-            else:
-                if path.startswith("/api/"):
-                    path = path[4:]
-
-            if not path or not path.startswith("/"):
-                path = "/" + path
-            scope["path"] = path
-
-        await self.app(scope, receive, send)
 
 
 app = FastAPI(
@@ -136,7 +111,7 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-app.add_middleware(VercelPathRewriteMiddleware)
+
 
 
 # =====================================================================
